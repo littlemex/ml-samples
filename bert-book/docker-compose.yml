@@ -9,7 +9,7 @@ services:
     working_dir: /home/root/work
     volumes:
       - ./work:/home/root/work
-    command: jupyter notebook --port 8080 --notebook-dir="/home/root/work" --ip=0.0.0.0 --no-browser --allow-root --NotebookApp.token="$TOKEN"
+    command: jupyter notebook --port 8080 --notebook-dir="/home/root/work" --ip=0.0.0.0 --no-browser --allow-root --NotebookApp.token=''
     deploy:
       resources:
         reservations:
