@@ -2,6 +2,8 @@ FROM huggingface/transformers-pytorch-gpu:4.18.0
 
 USER root
 
+RUN apt-get update && apt install -y wget unzip curl
+
 RUN pip install --no-cache-dir \
   lightgbm==3.2.1 \
   transformers==4.5.0 \

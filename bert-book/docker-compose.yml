@@ -4,6 +4,7 @@ services:
     build: ./docker_images/jupyter
     ports:
       - "8080:8080"
+      - "8081:8081"
     environment:
       - JUPYTER_ENABLE_LAB=yes
     working_dir: /home/root/work
