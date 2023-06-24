@@ -1,0 +1,66 @@
+digraph {
+	graph [size="12,12"]
+	node [align=left fontname=monospace fontsize=10 height=0.2 ranksep=0.1 shape=box style=filled]
+	139845263804192 [label="
+ (2, 5, 384)" fillcolor=darkolivegreen1]
+	139845263684512 [label="AddBackward0
+------------
+alpha: 1"]
+	139845263684128 -> 139845263684512
+	139845263684128 [label="CatBackward0
+------------
+dim: 1"]
+	139845263684608 -> 139845263684128
+	139845263684608 [label="RepeatBackward0
+---------------------------
+repeats       :   (2, 1, 1)
+self_sym_sizes: (1, 1, 384)"]
+	139845263683984 -> 139845263684608
+	139845263803952 [label="
+ (1, 1, 384)" fillcolor=lightblue]
+	139845263803952 -> 139845263683984
+	139845263683984 [label=AccumulateGrad]
+	139845263684272 -> 139845263684128
+	139845263684272 [label="TransposeBackward0
+------------------
+dim0: 1
+dim1: 2"]
+	139845263683792 -> 139845263684272
+	139845263683792 [label="ReshapeAliasBackward0
+------------------------------
+self_sym_sizes: (2, 384, 2, 2)"]
+	139845263683696 -> 139845263683792
+	139845263683696 -> 139845269096544 [dir=none]
+	139845269096544 [label="input
+ (2, 3, 32, 32)" fillcolor=orange]
+	139845263683696 -> 139845263803792 [dir=none]
+	139845263803792 [label="weight
+ (384, 3, 16, 16)" fillcolor=orange]
+	139845263683696 [label="ConvolutionBackward0
+----------------------------------
+bias_sym_sizes_opt:         (384,)
+dilation          :         (1, 1)
+groups            :              1
+input             : [saved tensor]
+output_padding    :         (0, 0)
+padding           :         (0, 0)
+stride            :       (16, 16)
+transposed        :          False
+weight            : [saved tensor]"]
+	139845263683600 -> 139845263683696
+	139845263803792 [label="
+ (384, 3, 16, 16)" fillcolor=lightblue]
+	139845263803792 -> 139845263683600
+	139845263683600 [label=AccumulateGrad]
+	139845263683648 -> 139845263683696
+	139845263803872 [label="
+ (384)" fillcolor=lightblue]
+	139845263803872 -> 139845263683648
+	139845263683648 [label=AccumulateGrad]
+	139845263684224 -> 139845263684512
+	139845263804032 [label="
+ (1, 5, 384)" fillcolor=lightblue]
+	139845263804032 -> 139845263684224
+	139845263684224 [label=AccumulateGrad]
+	139845263684512 -> 139845263804192
+}
