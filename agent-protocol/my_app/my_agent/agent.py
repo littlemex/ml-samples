@@ -1,7 +1,18 @@
 import autogen
 import os
+import boto3
 
-config_list = [{"model": "gpt-4o", "api_key": os.environ["OPENAI_API_KEY"]}]
+
+config_list = [{
+    "model": "anthropic.claude-3-sonnet-20240229-v1:0",  # Claude 3.5 Sonnet v2 model ID
+    "api_type": "bedrock",
+    "base_url": "bedrock-runtime",  # Bedrock runtime endpoint
+    "credentials": {
+        "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID"),
+        "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        "aws_region": os.environ.get("AWS_REGION", "us-east-1")  # Default to us-east-1 if not specified
+    }
+}]
 
 llm_config = {
     "timeout": 600,
