@@ -20,7 +20,7 @@ https://docs.astral.sh/uv/getting-started/installation/#installation-methods
 uv venv
 source .venv/bin/activate  # Linux/macOS
 
-uv pip install rembg Pillow
+uv pip install -r pyproject.toml
 ```
 
 ## 使用方法
@@ -28,7 +28,7 @@ uv pip install rembg Pillow
 ### 基本的な使用方法
 
 ```bash
-python rembg_python.py /path/to/image/directory --model u2net
+uv run rembg_python.py /path/to/image/directory --model u2net
 ```
 
 デフォルトでは `u2net` モデルが使用されます。
@@ -46,8 +46,10 @@ python rembg_python.py /path/to/image/directory --model u2net
 
 サンプルを実行するには：
 
+事前にモデルをダウンロードしている必要があります。
+
 ```bash
-python rembg_python.py examples
+uv run rembg_python.py examples
 ```
 
 ### モデルの設定（config.json）
