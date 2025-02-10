@@ -1,0 +1,18 @@
+[project]
+name = "rembg"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.32.3",
+    "tqdm>=4.67.1",
+]
+
+[dependency-groups]
+dev = [
+    "rembg[cli,cpu]",
+]
+
+[tool.uv.sources]
+rembg = { workspace = true }
