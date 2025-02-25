@@ -4,16 +4,22 @@ import asyncio
 from response_parser import ResponseParser
 from logging_config import get_logger
 from config import config
+from mcp import ClientSession
 
 class ContentProcessor:
     """Handles processing of LLM responses and tool executions"""
     
-    def __init__(self, session):
+    def __init__(self, session: Optional[ClientSession] = None):
         self.session = session
         self.logger = get_logger('ContentProcessor')
         
     async def _execute_tool_with_timeout(self, tool_name: str, tool_args: dict) -> dict:
         """Execute tool with timeout"""
+        if not self.session:
+            error_msg = "No MCP session available for tool execution"
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+            
         try:
             return await asyncio.wait_for(
                 self.session.call_tool(tool_name, tool_args),

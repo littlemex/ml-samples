@@ -1,71 +1,130 @@
+import argparse
 import asyncio
+import importlib.util
+import logging
+import os
 import sys
-from typing import Optional
-from llm_provider import LLMProvider, BedrockProvider
+from pathlib import Path
+from contextlib import AsyncExitStack
+from typing import List, Dict, Any, Optional
+
+from logging_config import setup_logging
 from server_connection import ServerConnection
 from content_processor import ContentProcessor
-from logging_config import setup_logging, get_logger
-from config import config
+from llm_provider import BedrockProvider
+from response_parser import ResponseParser
+from config import Config
 
+# Set up logging
+setup_logging()
+logger = logging.getLogger(__name__)
 
 class MCPClient:
-    """Main MCP client that coordinates server connection, LLM, and content processing"""
+    """MCP Client for interacting with MCP servers and LLMs"""
     
-    def __init__(self, llm_provider: Optional[LLMProvider] = None):
-        # Initialize logging
-        setup_logging()
-        self.logger = get_logger('MCPClient')
+    def __init__(self):
+        """Initialize the MCP client"""
+        self.exit_stack = AsyncExitStack()
+        self.server_connection = None
         
-        # Initialize components
-        self.server = ServerConnection()
-        self.llm_provider = llm_provider or BedrockProvider()
-        self.content_processor = None  # Initialized after server connection
-        
-        self.logger.info('MCPClient initialized')
-        
-    async def connect_to_server(self, server_script_path: str):
-        """Connect to an MCP server"""
-        tool_names = await self.server.connect(server_script_path)
-        self.content_processor = ContentProcessor(self.server.session)
-        print("\nConnected to server with tools:", tool_names)
-        
-    async def process_query(self, query: str) -> str:
-        """Process a query using the LLM provider and available tools"""
-        if len(query) > config.max_query_length:
-            raise ValueError(f"Query exceeds maximum length of {config.max_query_length} characters")
+        # Check if we should use mock responses instead of real API calls
+        use_mock = os.getenv('USE_MOCK_RESPONSE', 'false').lower() == 'true'
+        if use_mock:
+            logger.info("Using mock responses instead of real API calls")
             
-        self.logger.info(f'Processing query: {query}')
+        # Initialize the LLM provider
+        try:
+            self.llm_provider = BedrockProvider()
+        except Exception as e:
+            logger.error(f"Error initializing BedrockProvider: {e}")
+            logger.warning("Setting USE_MOCK_RESPONSE=true to use mock responses")
+            os.environ['USE_MOCK_RESPONSE'] = 'true'
+            self.llm_provider = BedrockProvider()
+            
+        self.content_processor = ContentProcessor()
+        self.response_parser = ResponseParser()
+        self.session = None
+        
+    async def connect_to_server(self, server_path: str) -> List[str]:
+        """Connect to an MCP server"""
+        try:
+            self.server_connection = ServerConnection(server_path)
+            tool_names = await self.server_connection.connect()
+            self.session = self.server_connection.session
+            self.content_processor.session = self.session
+            return tool_names
+        except Exception as e:
+            logger.error(f"Failed to connect to server: {e}")
+            raise
+    
+    async def process_query(self, query: str) -> str:
+        """Process a query using LLM and available tools"""
+        if not self.session:
+            raise ValueError("Not connected to any MCP server")
+            
         messages = [
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": query
-                    }
-                ]
+                "content": query
             }
         ]
 
-        # Get available tools for LLM
-        response = await self.server.session.list_tools()
+        # Get available tools
+        response = await self.session.list_tools()
         available_tools = [{
             "name": tool.name,
             "description": tool.description,
             "input_schema": tool.inputSchema
         } for tool in response.tools]
 
-        self.logger.debug('Sending request to LLM provider')
-        try:
-            response_body = await self.llm_provider.invoke(messages, available_tools)
-            return await self.content_processor.process_response(response_body)
-        except Exception as e:
-            self.logger.error(f'Error processing query: {str(e)}')
-            raise
+        # Initial LLM API call
+        llm_response = await self.llm_provider.invoke(messages, available_tools)
 
+        # Process response and handle tool calls
+        tool_results = []
+        final_text = []
+        # FIXME:  この処理は response_parser で処理すべき部分があれば response_parser  にメソッドを作りましょう
+        assistant_message_content = []
+        for content in llm_response.get("content", []):
+            if content.get("type") == "text":
+                final_text.append(content.get("text", ""))
+                assistant_message_content.append(content)
+            elif content.get("type") == "tool_call":
+                tool_name, tool_args = self.response_parser.parse_tool_call(content.get("tool_call", {}))
+                if tool_name and tool_args:
+                    # Execute tool call
+                    logger.info(f"Executing tool: {tool_name} with args: {tool_args}")
+                    result = await self.session.call_tool(tool_name, tool_args)
+                    tool_results.append({"call": tool_name, "result": result})
+                    final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
+
+                    assistant_message_content.append(content)
+                    messages.append({
+                        "role": "assistant",
+                        "content": assistant_message_content
+                    })
+                    messages.append({
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": content.get("id", ""),
+                                "content": result.content
+                            }
+                        ]
+                    })
+
+                    # Get next response from LLM
+                    llm_response = await self.llm_provider.invoke(messages, available_tools)
+                    if llm_response.get("content"):
+                        for next_content in llm_response.get("content", []):
+                            if next_content.get("type") == "text":
+                                final_text.append(next_content.get("text", ""))
+
+        return "\n".join(final_text)
+        
     async def chat_loop(self):
         """Run an interactive chat loop"""
-        self.logger.info('Starting chat loop')
         print("\nMCP Client Started!")
         print("Type your queries or 'quit' to exit.")
 
@@ -74,44 +133,34 @@ class MCPClient:
                 query = input("\nQuery: ").strip()
 
                 if query.lower() == 'quit':
-                    self.logger.info('Received quit command, exiting chat loop')
                     break
-
-                if not query:
-                    print("Query cannot be empty")
-                    continue
 
                 response = await self.process_query(query)
                 print("\n" + response)
 
-            except ValueError as e:
-                error_msg = f"Invalid input: {str(e)}"
-                self.logger.warning(error_msg)
-                print(f"\n{error_msg}")
             except Exception as e:
-                error_msg = f"Error during chat loop: {str(e)}"
-                self.logger.error(error_msg)
+                logger.error(f"Error processing query: {e}", exc_info=True)
                 print(f"\nError: {str(e)}")
-
+                
     async def cleanup(self):
         """Clean up resources"""
-        self.logger.info('Cleaning up resources')
-        await self.server.cleanup()
+        if self.server_connection:
+            await self.server_connection.cleanup()
+        await self.exit_stack.aclose()
 
 async def main():
-    logger = get_logger('main')
-    if len(sys.argv) < 2:
-        logger.error('No server script path provided')
-        print("Usage: python client.py <path_to_server_script>")
-        sys.exit(1)
-
+    """Main function to run the client."""
+    parser = argparse.ArgumentParser(description="MCP Client")
+    parser.add_argument("server_path", help="Path to the server module")
+    args = parser.parse_args()
+    
     client = MCPClient()
     try:
-        await client.connect_to_server(sys.argv[1])
+        await client.connect_to_server(args.server_path)
         await client.chat_loop()
     except Exception as e:
-        logger.error(f'Fatal error in main: {str(e)}')
-        raise
+        logger.error(f"Error in main: {e}", exc_info=True)
+        sys.exit(1)
     finally:
         await client.cleanup()
 
