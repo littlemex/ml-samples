@@ -90,8 +90,9 @@ class MCPClient:
                 final_text.append(content.get("text", ""))
                 assistant_message_content.append(content)
             elif content.get("type") == "tool_call":
-                tool_name, tool_args = self.response_parser.parse_tool_call(content.get("tool_call", {}))
-                if tool_name and tool_args:
+                tool_call_result = self.response_parser.parse_tool_call(content.get("tool_call", {}))
+                if tool_call_result:
+                    tool_name, tool_args = tool_call_result
                     # Execute tool call
                     logger.info(f"Executing tool: {tool_name} with args: {tool_args}")
                     result = await self.session.call_tool(tool_name, tool_args)
@@ -103,15 +104,16 @@ class MCPClient:
                         "role": "assistant",
                         "content": assistant_message_content
                     })
+                    # Format tool result as plain text for compatibility with Bedrock
+                    tool_result_text = f"Tool result for {tool_name}:\n"
+                    if isinstance(result.content, list):
+                        for item in result.content:
+                            if hasattr(item, 'text'):
+                                tool_result_text += item.text + "\n"
+                    
                     messages.append({
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": content.get("id", ""),
-                                "content": result.content
-                            }
-                        ]
+                        "content": tool_result_text
                     })
 
                     # Get next response from LLM

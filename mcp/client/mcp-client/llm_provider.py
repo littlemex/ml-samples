@@ -37,6 +37,9 @@ class BedrockProvider(LLMProvider):
     """Amazon Bedrock implementation of LLMProvider using litellm"""
     
     def __init__(self):
+        # Initialize mock_provider to None by default
+        self.mock_provider = None
+        
         # Check if we should use mock responses
         self.use_mock = os.getenv('USE_MOCK_RESPONSE', 'false').lower() == 'true'
         
@@ -48,7 +51,7 @@ class BedrockProvider(LLMProvider):
                 self.mock_provider = MockProvider()
             except ImportError:
                 logger.warning("mock_provider.py not found, using internal mock implementation")
-                self.mock_provider = None
+                # self.mock_provider is already None
             return
             
         # Bedrock configuration
@@ -74,13 +77,24 @@ class BedrockProvider(LLMProvider):
         profile = os.getenv('AWS_PROFILE')
         aws_profile_name = os.getenv('AWS_PROFILE_NAME')
         
-        if not (access_key and secret_key) and not profile and not aws_profile_name:
+        # If AWS_PROFILE is set but AWS_PROFILE_NAME is not, use AWS_PROFILE as AWS_PROFILE_NAME
+        if profile and not aws_profile_name:
+            os.environ['AWS_PROFILE_NAME'] = profile
+            aws_profile_name = profile
+            logger.info(f"Setting AWS_PROFILE_NAME to AWS_PROFILE value: {profile}")
+        
+        has_access_keys = access_key and secret_key
+        has_profile = profile or aws_profile_name
+        
+        if not has_access_keys and not has_profile:
             logger.warning("AWS credentials not found in environment variables.")
             logger.warning("Make sure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set,")
             logger.warning("or AWS_PROFILE/AWS_PROFILE_NAME is set and ~/.aws/credentials is properly configured.")
-        
-        if aws_profile_name:
-            logger.info(f"Using AWS profile name: {aws_profile_name}")
+        else:
+            if has_access_keys:
+                logger.info("Using AWS access key and secret key for authentication")
+            if has_profile:
+                logger.info(f"Using AWS profile for authentication: {aws_profile_name or profile}")
         
     async def invoke(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Invoke Bedrock model using litellm"""
@@ -96,8 +110,16 @@ class BedrockProvider(LLMProvider):
         try:
             logger.debug(f"Invoking Bedrock model: {self.model_id}")
             
-            # Get AWS profile name from environment variable
+            # Check authentication method
+            access_key = os.getenv('AWS_ACCESS_KEY_ID')
+            secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
             aws_profile_name = os.getenv('AWS_PROFILE_NAME')
+            aws_profile = os.getenv('AWS_PROFILE')
+            
+            # If AWS_PROFILE is set but AWS_PROFILE_NAME is not, use AWS_PROFILE as AWS_PROFILE_NAME
+            if aws_profile and not aws_profile_name:
+                aws_profile_name = aws_profile
+                os.environ['AWS_PROFILE_NAME'] = aws_profile
             
             # Prepare completion parameters
             completion_params = {
@@ -110,10 +132,14 @@ class BedrockProvider(LLMProvider):
                 "anthropic_version": self.anthropic_version
             }
             
-            # Add AWS profile name if specified
+            # Add authentication parameters based on what's available
             if aws_profile_name:
                 completion_params["aws_profile_name"] = aws_profile_name
                 logger.debug(f"Using AWS profile name: {aws_profile_name}")
+            elif access_key and secret_key:
+                # Ensure access keys are properly set in environment variables
+                # (litellm will pick these up automatically)
+                logger.debug("Using AWS access key and secret key")
             
             response = completion(**completion_params)
             
@@ -124,20 +150,31 @@ class BedrockProvider(LLMProvider):
         except Exception as e:
             logger.error(f"Error invoking Bedrock: {str(e)}", exc_info=True)
             
-            # Provide more helpful error message
-            if "NoneType" in str(e) and "split" in str(e):
-                logger.error("This error is likely due to missing or invalid AWS credentials.")
-                logger.error("Please check your .env file and AWS configuration.")
-                
-                # Fall back to mock provider
-                logger.info("Falling back to mock provider due to error")
-                if self.mock_provider:
-                    return await self.mock_provider.invoke(messages, tools)
-                else:
-                    return self._get_mock_response(messages, tools)
+            error_str = str(e).lower()
             
-            # Re-raise the exception with more context
-            raise Exception(f"Error invoking Bedrock via litellm: {str(e)}")
+            # Provide more helpful error messages based on error type
+            if "nonetype" in error_str and "split" in error_str:
+                logger.error("Authentication error: AWS credentials issue detected.")
+                logger.error("This is likely due to missing or invalid AWS credentials.")
+                logger.error("Please check your .env file and AWS configuration.")
+            elif "accessdenied" in error_str or "unauthorized" in error_str:
+                logger.error("Authorization error: Your AWS credentials don't have permission to access Bedrock.")
+                logger.error("Please check that your AWS account has Bedrock access enabled.")
+            elif "notfound" in error_str or "no such model" in error_str:
+                logger.error(f"Model not found: The specified model '{self.model_id}' may not exist or is not accessible.")
+                logger.error("Please check your BEDROCK_MODEL_ID setting.")
+            elif "region" in error_str:
+                logger.error("Region error: The specified AWS region may not support Bedrock or is invalid.")
+                logger.error("Please check your AWS_REGION setting.")
+            else:
+                logger.error("Unknown error occurred when calling Bedrock.")
+                
+            # Fall back to mock provider
+            logger.info("Falling back to mock provider due to error")
+            if self.mock_provider:
+                return await self.mock_provider.invoke(messages, tools)
+            else:
+                return self._get_mock_response(messages, tools)
     
     def _get_mock_response(self, messages: List[Dict[str, Any]] = None, tools: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return a mock response for testing purposes"""
@@ -155,11 +192,16 @@ class BedrockProvider(LLMProvider):
                                 query = content_item.get("text", "").lower()
                                 break
         
+        logger.info(f"Internal mock provider processing query: {query}")
+        
         # Check if we should use a weather tool
         if tools and ("weather" in query or "alerts" in query or "forecast" in query):
             for tool in tools:
                 if tool.get("name") in ["get_alerts", "get_forecast"]:
                     tool_name = tool.get("name")
+                    logger.info(f"Internal mock provider using tool: {tool_name}")
+                    
+                    # Create a tool call response with function field for compatibility
                     return {
                         "content": [
                             {
@@ -170,12 +212,14 @@ class BedrockProvider(LLMProvider):
                                 "type": "tool_call",
                                 "id": "mock_call_123",
                                 "tool_call": {
-                                    "name": tool_name,
-                                    "arguments": json.dumps({
-                                        "state": "CA" if "alerts" in query else None,
-                                        "latitude": 37.7749 if "forecast" in query else None,
-                                        "longitude": -122.4194 if "forecast" in query else None
-                                    })
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": json.dumps({
+                                            "state": "CA" if "alerts" in query else None,
+                                            "latitude": 37.7749 if "forecast" in query else None,
+                                            "longitude": -122.4194 if "forecast" in query else None
+                                        })
+                                    }
                                 }
                             }
                         ]

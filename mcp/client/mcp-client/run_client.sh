@@ -16,9 +16,9 @@ fi
 # Check if virtual environment exists
 if [ ! -d .venv ]; then
     echo "Creating virtual environment..."
-    python -m venv .venv
+    uv venv .venv
     source .venv/bin/activate
-    pip install -r requirements.txt
+    uv sync
 else
     source .venv/bin/activate
 fi
@@ -52,4 +52,4 @@ if [ $# -eq 0 ]; then
 fi
 
 echo "Starting MCP client..."
-python client.py "$1"
+uv run client.py "$1"

@@ -70,12 +70,14 @@ class MockProvider(LLMProvider):
                             "type": "tool_call",
                             "id": "call_123456",
                             "tool_call": {
-                                "name": tool_name,
-                                "arguments": json.dumps({
-                                    "state": "CA" if "alerts" in query else None,
-                                    "latitude": 37.7749 if "forecast" in query else None,
-                                    "longitude": -122.4194 if "forecast" in query else None
-                                })
+                                "function": {
+                                    "name": tool_name,
+                                    "arguments": json.dumps({
+                                        "state": "CA" if "alerts" in query else None,
+                                        "latitude": 37.7749 if "forecast" in query else None,
+                                        "longitude": -122.4194 if "forecast" in query else None
+                                    })
+                                }
                             }
                         }
                     ]
