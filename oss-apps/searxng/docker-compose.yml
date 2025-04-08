@@ -1,0 +1,44 @@
+services:
+  livebook_with_searxng:
+    image: ghcr.io/livebook-dev/livebook:0.15.3
+    container_name: livebook_with_searxng
+    ports:
+      - '8082:8080'
+      - '8083:8081'
+    volumes:
+      - ./tmp:/tmp
+
+  searxng:
+    container_name: searxng_host
+    image: searxng/searxng:latest
+    ports:
+      - "18888:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_HOSTNAME=localhost:8080/
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+  ollama:
+    container_name: ollama
+    image: ollama/ollama:latest
+    ports:
+      - "21434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama:
