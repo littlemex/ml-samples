@@ -6,17 +6,24 @@ services:
       - '8082:8080'
       - '8083:8081'
     volumes:
-      - ./tmp:/tmp
+      - ./notebooks:/data/notebooks
+      - ./models:/data/models
+    environment:
+      - LIVEBOOK_DATA_PATH=/data
+      - LIVEBOOK_HOME=/data/notebooks
+      - LIVEBOOK_PASSWORD=livebook-password-012
 
   searxng:
     container_name: searxng_host
     image: searxng/searxng:latest
     ports:
-      - "18888:8080"
+      - "8888:8080"
     volumes:
       - ./searxng:/etc/searxng:rw
     environment:
-      - SEARXNG_HOSTNAME=localhost:8080/
+      - SEARXNG_HOSTNAME=searxng_host:8080/
+      - BASE_URL=http://searxng_host:8080/
+      - INSTANCE_NAME=searxng_host
     restart: unless-stopped
     cap_drop:
       - ALL
