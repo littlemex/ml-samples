@@ -1,0 +1,37 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    env_file: .env
+    ports:
+      - "14000:4000"
+    volumes:
+      - ./${CONFIG_FILE:-config.yaml}:/app/config.yaml
+      - ./custom_guardrail.py:/app/custom_guardrail.py
+    depends_on:
+      - postgres
+      - presidio-analyzer
+      - presidio-anonymizer
+    command: --config /app/config.yaml --detailed_debug
+    logging:
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:15
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    ports:
+      - "5002:3000"
+
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:latest
+    ports:
+      - "5001:3000"
+
+volumes:
+  postgres_data:
