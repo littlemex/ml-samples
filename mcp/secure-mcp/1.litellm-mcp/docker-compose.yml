@@ -1,0 +1,46 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    env_file: .env
+    ports:
+      - "4001:4000"
+    volumes:
+      - ./${CONFIG_FILE:-default_config.yml}:/app/config.yaml
+    depends_on:
+      - postgres
+      - context7-mcp
+      - aws-docs-mcp
+    command: --config /app/config.yaml --detailed_debug
+    logging:
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:15
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  context7-mcp:
+    image: node:20-slim
+    working_dir: /app
+    command: npx -y @upstash/context7-mcp@latest
+    volumes:
+      - context7_mcp_cache:/app/.cache
+    environment:
+      - NODE_ENV=production
+
+  aws-docs-mcp:
+    image: python:3.11-slim
+    working_dir: /app
+    command: pip install uvx && uvx awslabs.aws-documentation-mcp-server@latest
+    volumes:
+      - aws_docs_mcp_cache:/app/.cache
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  postgres_data:
+  context7_mcp_cache:
+  aws_docs_mcp_cache:
